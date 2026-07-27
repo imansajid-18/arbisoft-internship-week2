@@ -1,40 +1,55 @@
-# Create your tests here.
 import pytest
-from crud_rest_api.models import Notes
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 
-@pytest.mark.django_db
-def test_create_note():
-    dummy_user=User.objects.create_user(username="testuser", password="testpassword")
-    note = Notes.objects.create(
-        title="Test Note",
-        description="This is a test note.",
-        user=dummy_user
+from crud_rest_api.models import Note
+from crud_rest_api.serializers import NoteSerializer
+
+User = get_user_model()
+
+
+@pytest.fixture
+def test_user():
+    User = get_user_model()
+    return User.objects.create_user(
+        username="testuser",
+        email="testuser@example.com",
+        password="testpassword",
     )
-    assert note.title == "Test Note"
-    assert note.description == "This is a test note."
-    assert note.user == dummy_user
 
 
-@pytest.mark.django_db
-def test_note_str_returns_title():
-    dummy_user = User.objects.create_user(username="testuser1", password="testpassword")
-    note = Notes.objects.create(
-        title="Sample Note",
-        description="Some description.",
-        user=dummy_user
-    )
-    assert str(note) == "Sample Note"
+# Unit Testing
 
 
 @pytest.mark.django_db
-def test_user_notes_related_name():
-    dummy_user = User.objects.create_user(username="testuser2", password="testpassword")
-    note = dummy_user.notes.create(
-        title="Related Note",
-        description="Related note description."
-    )
-    assert note.user == dummy_user
-    assert dummy_user.notes.count() == 1
-    assert dummy_user.notes.first() == note
+def test_title_sanitization(test_user):
+    data = {"title": "   My Clean Title   ", "description": "Valid description"}
+    serializer = NoteSerializer(data=data)
+    assert serializer.is_valid()
+    serializer.save(user=test_user)
+    note = Note.objects.first()
+    assert note.title == "My Clean Title"
 
+
+@pytest.mark.django_db
+def test_reject_short_titles(test_user):
+    data = {"title": "  Hi  ", "description": "Valid description"}
+    serializer = NoteSerializer(data=data)
+    assert not serializer.is_valid()
+    assert "title" in serializer.errors
+
+
+@pytest.mark.django_db
+def test_reject_entirely_numeric_titles(test_user):
+    data = {"title": "12345.67", "description": "Valid description"}
+    serializer = NoteSerializer(data=data)
+    assert not serializer.is_valid()
+    assert "title" in serializer.errors
+
+
+@pytest.mark.django_db
+def test_valid_note_creation(test_user):
+    data = {"title": "Perfect Title", "description": "Valid description"}
+    serializer = NoteSerializer(data=data)
+    assert serializer.is_valid()
+    serializer.save(user=test_user)
+    assert Note.objects.count() == 1
